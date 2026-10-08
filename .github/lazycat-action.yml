@@ -1,0 +1,50 @@
+version: 1
+
+project:
+  root: .
+  build_config: lzc-build.yml
+  package_file: package.yml
+  output: dist/application.lpk
+  target_arch: amd64
+
+update:
+  strategy: publish
+  allow_downgrade: false
+  version_source:
+    type: image
+    image: raft-server
+
+build:
+  run_buildscript: false
+
+images:
+  # raft-server 驱动应用版本：上游 release 的镜像 tag（vX.Y.Z）映射为 package.yml.version。
+  - id: raft-server
+    target: service
+    service: server
+    source: czyt/raft-server
+    channel: stable
+    sort: semver
+    tag_regex: '^v?\d+\.\d+\.\d+$'
+    delivery:
+      mode: mirror
+      require_digest_match: true
+  - id: raft-web
+    target: service
+    service: web
+    source: czyt/raft-web
+    channel: stable
+    sort: semver
+    tag_regex: '^v?\d+\.\d+\.\d+$'
+    delivery:
+      mode: mirror
+      require_digest_match: true
+
+stores:
+  official:
+    enabled: false
+  private:
+    enabled: true
+    skip_if_version_exists: true
+    name: Raft
+    summary: "人类与 AI Agent 协作的共享工作空间"

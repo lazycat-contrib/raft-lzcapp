@@ -1,0 +1,194 @@
+application:
+  subdomain: raft
+  background_task: false
+  multi_instance: false
+  # 具体路径必须放在 / 之前（路由按更具体优先匹配）；
+  # disable_trim_location 保留完整路径转发给后端。
+  upstreams:
+    - location: /api
+      backend: http://server:3001
+      disable_trim_location: true
+    - location: /socket.io
+      backend: http://server:3001
+      disable_trim_location: true
+      fix_websocket_header: true
+    - location: /daemon
+      backend: http://server:3001
+      disable_trim_location: true
+      fix_websocket_header: true
+    - location: /internal
+      backend: http://server:3001
+      disable_trim_location: true
+      fix_websocket_header: true
+    - location: /share
+      backend: http://server:3001
+      disable_trim_location: true
+    - location: /
+      backend: http://web:80/
+
+  # 免密登录：注册 / 登录 / 重置密码成功后记住凭据，登录页自动填充（不自动提交）。
+  injects:
+    - id: raft-capture-credentials
+      auth_required: false
+      on: request
+      when:
+        - /api/auth/*
+      do: |
+        const path = String(ctx.request.path || "");
+        const method = String(ctx.request.method || "").toUpperCase();
+        const watched = {
+          "/api/auth/login": true,
+          "/api/auth/register": true,
+          "/api/auth/reset-password": true,
+        };
+        if (method !== "POST" || !watched[path]) return;
+        let payload = null;
+        try { payload = ctx.body.getJSON(); } catch { payload = null; }
+        if (!payload || typeof payload !== "object") return;
+        if (typeof payload.email === "string" && payload.email.length > 0) {
+          ctx.flow.set("raft_pending_email", payload.email);
+        }
+        if (typeof payload.password === "string" && payload.password.length > 0) {
+          ctx.flow.set("raft_pending_password", payload.password);
+        }
+
+    - id: raft-commit-credentials
+      auth_required: false
+      on: response
+      when:
+        - /api/auth/*
+      do: |
+        if (ctx.status < 200 || ctx.status >= 300) return;
+        const email = ctx.flow.get("raft_pending_email");
+        const password = ctx.flow.get("raft_pending_password");
+        if (typeof email === "string" && email.length > 0) ctx.persist.set("raft.email", email);
+        if (typeof password === "string" && password.length > 0) ctx.persist.set("raft.password", password);
+
+    - id: raft-login-autofill
+      when:
+        - /
+        - /s/*
+      do:
+        - src: builtin://simple-inject-password
+          params:
+            user:
+              $persist: raft.email
+            password:
+              $persist: raft.password
+            userSelector: "#login-email"
+            passwordSelector: "#login-password"
+            autoSubmit: false
+
+services:
+  postgres:
+    image: docker.1ms.run/library/postgres:16-alpine
+    environment:
+      - POSTGRES_DB=raft
+      - POSTGRES_USER=raft
+      - POSTGRES_PASSWORD={{ stable_secret "db_password" }}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U raft -d raft"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    binds:
+      - /lzcapp/var/postgres:/var/lib/postgresql/data
+
+  redis:
+    image: docker.1ms.run/library/redis:7-alpine
+    command: redis-server --requirepass {{ stable_secret "redis_password" }}
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping 2>&1 | grep -Eq 'PONG|NOAUTH'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    binds:
+      - /lzcapp/var/redis:/data
+
+  rustfs:
+    # upstream: rustfs/rustfs:latest
+    image: docker.1ms.run/rustfs/rustfs:latest
+    user: "0"
+    command: "/data"
+    environment:
+      - RUSTFS_ADDRESS=:9000
+      - RUSTFS_ACCESS_KEY={{ stable_secret "s3_access_key" }}
+      - RUSTFS_SECRET_KEY={{ stable_secret "s3_secret_key" }}
+      - RUSTFS_CONSOLE_ENABLE=true
+    binds:
+      - /lzcapp/var/rustfs:/data
+
+  server:
+    # upstream: czyt/raft-server:v1.21.2
+    image: docker.1ms.run/czyt/raft-server:v1.21.2
+    # 启动前初始化：等待 Postgres → 应用数据库迁移 → 等待 RustFS → 创建附件 bucket。
+    setup_script: |
+      #!/bin/sh
+      set -u
+      cd /app
+
+      wait_port() {
+        host="$1"; port="$2"; label="$3"; tries=0
+        until node -e "const s=require('net').connect(${port},'${host}',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1))" 2>/dev/null; do
+          tries=$((tries+1))
+          if [ "$tries" -ge 90 ]; then
+            echo "[raft-setup] ${label} did not become reachable"
+            return 1
+          fi
+          sleep 2
+        done
+      }
+
+      echo "[raft-setup] waiting for postgres..."
+      wait_port postgres 5432 postgres || exit 1
+
+      echo "[raft-setup] applying database migrations..."
+      node --import @oxc-node/core/register packages/server/scripts/migration-preflight.ts || { echo "[raft-setup] migration preflight failed"; exit 1; }
+      node --import @oxc-node/core/register packages/server/scripts/migrate-deploy.ts || { echo "[raft-setup] migrations failed"; exit 1; }
+
+      echo "[raft-setup] waiting for rustfs..."
+      if wait_port rustfs 9000 rustfs; then
+        echo "[raft-setup] ensuring attachment bucket..."
+        cd /app/packages/server
+        tries=0
+        until node ensure-rustfs-bucket.mjs; do
+          tries=$((tries+1))
+          if [ "$tries" -ge 30 ]; then
+            echo "[raft-setup] bucket init failed; continuing"
+            break
+          fi
+          sleep 2
+        done
+      else
+        echo "[raft-setup] rustfs unreachable; skipping bucket init"
+      fi
+
+      echo "[raft-setup] done"
+    environment:
+      - DATABASE_URL=postgresql://raft:{{ stable_secret "db_password" }}@postgres:5432/raft
+      - JWT_SECRET={{ stable_secret "jwt_secret" }}
+      # migration-preflight 要求声明期望的 statement_timeout（毫秒）。
+      - SERVER_MIGRATION_EXPECTED_STATEMENT_TIMEOUT_MS=600000
+      - PORT=3001
+      - NODE_ENV=production
+      - SERVER_URL=https://{{ .S.AppDomain }}
+      - APP_URL=https://{{ .S.AppDomain }}
+      - CORS_ORIGIN=https://{{ .S.AppDomain }}
+      - REDIS_URL=redis://:{{ stable_secret "redis_password" }}@redis:6379/0
+      - S3_ENDPOINT=http://rustfs:9000
+      - S3_REGION=us-east-1
+      - S3_FORCE_PATH_STYLE=true
+      - S3_ACCESS_KEY_ID={{ stable_secret "s3_access_key" }}
+      - S3_SECRET_ACCESS_KEY={{ stable_secret "s3_secret_key" }}
+      - S3_ATTACHMENTS_BUCKET=raft-attachments
+      - S3_CDN_BUCKET=raft-attachments
+    depends_on:
+      - postgres
+      - redis
+      - rustfs
+
+  web:
+    # upstream: czyt/raft-web:v1.21.2
+    image: docker.1ms.run/czyt/raft-web:v1.21.2

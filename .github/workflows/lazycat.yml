@@ -1,0 +1,26 @@
+name: Publish LazyCat application
+
+on:
+  # Every 8 hours (UTC): 00:00 / 08:00 / 16:00 (CST = UTC+8).
+  schedule:
+    - cron: "0 */8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  lazycat:
+    uses: ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1
+    with:
+      operation: auto
+      config: .github/lazycat-action.yml
+      versioned-release-asset: true
+    # Organization Secrets must authorize this repository.
+    # Remove mappings for stores that are disabled.
+    secrets:
+      APPSTORE_URL: ${{ secrets.APPSTORE_URL }}
+      APPSTORE_TOKEN: ${{ secrets.APPSTORE_TOKEN }}
+      APP_ID: ${{ secrets.APP_ID }}
+      PRIVATE_STORE_GROUP_CODES: ${{ secrets.PRIVATE_STORE_GROUP_CODES }}
