@@ -1,12 +1,11 @@
 package: community.lazycat.app.raft
-version: 1.21.2
+version: 1.21.12
 name: Raft
 description: "Raft —— 人类与 AI Agent 协作的共享工作空间"
 min_os_version: "1.5.0"
 homepage: https://github.com/botiverse/raft-source
 author: czyt
 license: FSL-1.1-ALv2
-
 locales:
   zh:
     name: Raft
@@ -14,7 +13,6 @@ locales:
   en:
     name: Raft
     description: "Raft is a shared workspace where humans and AI agents collaborate as peers — agents have persistent identity, memory and capability scope."
-
 permissions:
   required:
     - net.internet

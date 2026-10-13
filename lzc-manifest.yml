@@ -25,7 +25,6 @@ application:
       disable_trim_location: true
     - location: /
       backend: http://web:80/
-
   # 免密登录：注册 / 登录 / 重置密码成功后记住凭据，登录页自动填充（不自动提交）。
   injects:
     - id: raft-capture-credentials
@@ -51,7 +50,6 @@ application:
         if (typeof payload.password === "string" && payload.password.length > 0) {
           ctx.flow.set("raft_pending_password", payload.password);
         }
-
     - id: raft-commit-credentials
       auth_required: false
       on: response
@@ -63,7 +61,6 @@ application:
         const password = ctx.flow.get("raft_pending_password");
         if (typeof email === "string" && email.length > 0) ctx.persist.set("raft.email", email);
         if (typeof password === "string" && password.length > 0) ctx.persist.set("raft.password", password);
-
     - id: raft-login-autofill
       when:
         - /
@@ -78,7 +75,6 @@ application:
             userSelector: "#login-email"
             passwordSelector: "#login-password"
             autoSubmit: false
-
 services:
   postgres:
     image: docker.1ms.run/library/postgres:16-alpine
@@ -94,7 +90,6 @@ services:
       start_period: 30s
     binds:
       - /lzcapp/var/postgres:/var/lib/postgresql/data
-
   redis:
     image: docker.1ms.run/library/redis:7-alpine
     command: redis-server --requirepass {{ stable_secret "redis_password" }}
@@ -106,7 +101,6 @@ services:
       start_period: 10s
     binds:
       - /lzcapp/var/redis:/data
-
   rustfs:
     # upstream: rustfs/rustfs:latest
     image: docker.1ms.run/rustfs/rustfs:latest
@@ -119,10 +113,9 @@ services:
       - RUSTFS_CONSOLE_ENABLE=true
     binds:
       - /lzcapp/var/rustfs:/data
-
   server:
-    # upstream: czyt/raft-server:v1.21.2
-    image: docker.1ms.run/czyt/raft-server:v1.21.2
+    # upstream: czyt/raft-server:v1.21.12
+    image: docker.1ms.run/czyt/raft-server:v1.21.12
     # 启动前初始化：等待 Postgres → 应用数据库迁移 → 等待 RustFS → 创建附件 bucket。
     setup_script: |
       #!/bin/sh
@@ -188,7 +181,6 @@ services:
       - postgres
       - redis
       - rustfs
-
   web:
-    # upstream: czyt/raft-web:v1.21.2
-    image: docker.1ms.run/czyt/raft-web:v1.21.2
+    # upstream: czyt/raft-web:v1.21.12
+    image: docker.1ms.run/czyt/raft-web:v1.21.12
