@@ -114,8 +114,8 @@ services:
     binds:
       - /lzcapp/var/rustfs:/data
   server:
-    # upstream: czyt/raft-server:v1.21.12
-    image: docker.1ms.run/czyt/raft-server:v1.21.12
+    # upstream: czyt/raft-server:v1.21.23
+    image: docker.1ms.run/czyt/raft-server:v1.21.23
     # 启动前初始化：等待 Postgres → 应用数据库迁移 → 等待 RustFS → 创建附件 bucket。
     setup_script: |
       #!/bin/sh
@@ -182,5 +182,5 @@ services:
       - redis
       - rustfs
   web:
-    # upstream: czyt/raft-web:v1.21.12
-    image: docker.1ms.run/czyt/raft-web:v1.21.12
+    # upstream: czyt/raft-web:v1.21.23
+    image: docker.1ms.run/czyt/raft-web:v1.21.23
