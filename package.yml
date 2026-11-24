@@ -1,5 +1,5 @@
 package: community.lazycat.app.raft
-version: 1.29.3
+version: 1.33.1
 name: Raft
 description: "Raft —— 人类与 AI Agent 协作的共享工作空间"
 min_os_version: "1.5.0"
