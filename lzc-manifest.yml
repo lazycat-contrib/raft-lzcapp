@@ -182,5 +182,5 @@ services:
       - redis
       - rustfs
   web:
-    # upstream: czyt/raft-web:v1.29.3
-    image: docker.1ms.run/czyt/raft-web:v1.29.3
+    # upstream: czyt/raft-web:v1.33.1
+    image: docker.1ms.run/czyt/raft-web:v1.33.1
